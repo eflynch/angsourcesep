@@ -82,7 +82,6 @@ def spec_separation(sig, num_bins=100, show_plt=False):
 
     return (binsA - binsB).dot(binsA - binsB)
 
-    # return np.arccos(np.dot(binsA, binsB))
 
 def separate(lr, metric, n=20):
     sep = np.zeros((n,n))
@@ -98,34 +97,92 @@ def separate(lr, metric, n=20):
 
     amax = np.unravel_index(sep.argmax(), sep.shape)
 
-    return (round(amax[0]/float(n),2), round(amax[1]/float(n),2)), sep
+    return (amax[0]/float(n), amax[1]/float(n)), sep
 
-def plot_separation(sep_graph):
+def separate2(lr, metric, n=20):
+    sepA = np.zeros(n)
+    for i in xrange(1,n):
+        a = 0
+        b = i / float(n)
+        ab = LRtoAB(lr, a, b)
+        sepA[i] = metric(ab)
+
+    sepB = np.zeros(n)
+    for i in xrange(0,n-1):
+        a = 1
+        b = i / float(n)
+        ab = LRtoAB(lr, a, b)
+        sepB[i] = metric(ab)
+
+    peaksA = np.r_[False, sepA[1:] > sepA[:-1]] & np.r_[sepA[:-1] > sepA[1:], False]
+    peaksB = np.r_[False, sepB[1:] > sepB[:-1]] & np.r_[sepB[:-1] > sepB[1:], False]
+    domain = np.linspace(0,1,len(sepA),False)
+    peaks = [domain[i] for i,f in enumerate(peaksA | peaksB) if f]
+
+    if len(peaks) == 0:
+        ab = (0,0)
+    elif len(peaks) == 1:
+        ab = (peaks[0],peaks[0])
+    else:
+        ab = peaks[:2]
+
+    return ab, sepA, sepB
+
+
+def plot_separation(sep_graph, title):
     sep_graph = np.flipud(sep_graph)
     fig, ax = plt.subplots()
-    ax.set_title('Separation')
+    ax.set_title('Separation Graph for %s' % title)
     cax = ax.imshow(sep_graph, extent=[0, 1, 0, 1], interpolation='nearest')
     fig.colorbar(cax)
     ax.set_xlabel('alpha')
     ax.set_ylabel('beta')
-    plt.savefig('output.png')
+    plt.savefig('experiment1/%s.png' % title)
+    plt.close()
+
+
+def run_experiment1(lr, alpha, beta):
+    n = 20
+    pan, graph = separate(lr, lambda sig: spec_separation(sig, 300, False), n)
+    print "Expected (%.2f, %.2f); Got: (%.2f, %.2f)" % (alpha, beta, pan[0], pan[1])
+    plot_separation(graph, '%.2f_%.2f' % (alpha, beta))
+    return pan
+
+def run_experiment2(lr, alpha, beta):
+    n = 20
+    pan, sepA, sepB = separate2(lr, lambda sig: spec_separation(sig, 300, False), n)
+    print "Expected (%.2f, %.2f); Got: (%.2f, %.2f)" % (alpha, beta, pan[0], pan[1])
+    plt.figure()
+    plt.plot(np.linspace(0,1,len(sepA),False), sepA)
+    plt.plot(np.linspace(0,1,len(sepB),False), sepB)
+    plt.savefig('experiment2/%.2f_%.2f.png' % (alpha, beta))
+    plt.close()
+    return pan
 
 
 if __name__=="__main__":
-    alpha = 0.8
-    beta = 0.2
-    n = 20
-
     # Mix Sources
     violinSampler = dspy.Sampler("./violin.wav")
     polishSampler = dspy.Sampler("./polish.wav")
     A = violinSampler.sample(0, 44100*3, True, 1.0)
     B = polishSampler.sample(0, 44100*3, True, 1.0)
-    stereoMix = Mixer([A, B], [alpha, beta])
 
-    lr, fc = stereoMix.generate(44100*5)
+    success = []
+    failures = []
+    for i in xrange(9):
+        for j in xrange(9):
+            alpha = 0.1 * (i+1)
+            beta = 0.1 * (j+1)
+            stereoMix = Mixer([A, B], [alpha, beta])
+            lr, fc = stereoMix.generate(44100*5)
+            # pan = run_experiment1(lr, alpha, beta)
+            pan = run_experiment2(lr, alpha, beta)
+            if (sorted(pan)[0]-sorted([alpha,beta])[0]) < 0.01 and (sorted(pan)[1]-sorted([alpha,beta])[1]) < 0.01:
+                success.append((alpha, beta))
+            else:
+                failures.append((alpha, beta))
 
-    pan, graph = separate(lr, lambda sig: spec_separation(sig, 300, False), n)
-    print "Most likely panning values expected at:", pan
-    plot_separation(graph)
+    print "Succeeded in ", len(success), "out of", len(success)+len(failures)
+
+    
 
