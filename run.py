@@ -2,6 +2,8 @@ import numpy as np
 import dspy
 import matplotlib.pyplot as plt
 
+# Additions to DSPY
+
 class Mixer(dspy.BundleGenerator):
     def __init__(self, generators, mixes):
         self._mixes = mixes
@@ -28,6 +30,20 @@ class Monofy(dspy.WrapperGenerator):
         return dspy.lib.rechannel(buf, self.generator.num_channels, 1)
 
 
+# Known pan source separation for 2 sources
+
+def ABtoLR(sig, a, b):
+    A = sig[0::2]
+    B = sig[1::2]
+
+    L = a*A + b*B
+    R = (1-a) * A + (1-b)*B
+
+    output = np.zeros(len(sig))
+    output[0::2] = L
+    output[1::2] = R
+    return output
+
 def LRtoAB(sig, a, b):
     if a == b:
         raise Exception("Matrix is singular for a==b")
@@ -42,18 +58,6 @@ def LRtoAB(sig, a, b):
     output[0::2] = A
     output[1::2] = B
 
-    return output
-
-def ABtoLR(sig, a, b):
-    A = sig[0::2]
-    B = sig[1::2]
-
-    L = a*A + b*B
-    R = (1-a) * A + (1-b)*B
-
-    output = np.zeros(len(sig))
-    output[0::2] = L
-    output[1::2] = R
     return output
 
 def separation(sig, num_bins=100, show_plt=False):
@@ -97,10 +101,10 @@ def separate(lr, n=20):
             ab = LRtoAB(lr, a, b)
             sep[i,j] = separation(ab, 300)
 
-    plt.figure()
-    plt.imshow(sep, interpolation='nearest')
-    plt.colorbar()
-    plt.show()
+    amax = np.unravel_index(sep.argmax(), sep.shape)
+
+    return sep, (amax[0]/float(n), amax[1]/float(n))
+
 
 
 if __name__=="__main__":
@@ -116,7 +120,10 @@ if __name__=="__main__":
 
     lr, fc = stereoMix.generate(44100*5)
 
-    separate(lr, 10)
-
-    
+    sep, amax = separate(lr, 10)
+    print amax
+    plt.figure()
+    plt.imshow(sep, interpolation='nearest')
+    plt.colorbar()
+    plt.show()
 
